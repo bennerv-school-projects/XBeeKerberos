@@ -66,7 +66,7 @@ void loop() {
       // Receiving a TGT and session key back from the KDC
       case 1: {
         byte kerb_command = Serial.read();
-        //assert(kerb_command == KRB_AS_REP);
+        assert(kerb_command == KRB_AS_REP);
 
         // Read two blocks.  The first containing ciphertext with the client (my) name in it
         byte firstBlock[N_BLOCK] = {0};
@@ -80,8 +80,8 @@ void loop() {
         aes.decrypt(secondBlock, plainSecondBlock);
 
         // Read the client name it's being sent to and make sure it is me
-        byte readClientName = plainFirstBlock[0];
-        //assert((byte)clientName == readClientName);
+        char readClientName = plainFirstBlock[0];
+        assert(clientName == readClientName);
 
         // Copy the session key for further communication
         memcpy(session_key, plainSecondBlock, sizeof(byte) * N_BLOCK);
@@ -96,6 +96,7 @@ void loop() {
 
       // Logging into a resource.  Shouldn't ever receive this, only send it out
       case 2: {
+        
       }
         break;
 
