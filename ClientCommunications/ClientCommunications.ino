@@ -1,3 +1,10 @@
+#include <Printers.h>
+#include <XBee.h>
+#include <AES.h>
+#include <assert.h>
+
+#include "kerberos.h"
+
 /* CHANGE LOG
  * Date       Name       Changes
  * -----------------------------------------------------------------------------
@@ -7,10 +14,6 @@
  * Kerberos client on arduino
  * ----------------------------------------------------------------------------- 
  */
-
-#include <AES.h>
-#include <assert.h>
-#include "kerberos.h"
 
 AES aes;
 byte master_key[N_BLOCK] = {0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE};
@@ -66,6 +69,7 @@ void loop() {
 
         byte plainFirstBlock[N_BLOCK] = {0};
         byte plainSecondBlock[N_BLOCK] = {0};
+        aes.set_key(master_key);
         aes.decrypt(cipherFirstBlock, plainFirstBlock);
         aes.decrypt(cipherSecondBlock, plainSecondBlock);
 

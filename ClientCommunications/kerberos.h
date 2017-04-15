@@ -1,5 +1,7 @@
 #ifndef __KERB__
 #define __KERB__
+
+#include <AES.h>
 	
 
 // Define a TGT and kerberos_commands as well.  Should put in a separate file
