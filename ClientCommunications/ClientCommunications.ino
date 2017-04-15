@@ -2,6 +2,7 @@
 #include <XBee.h>
 #include <AES.h>
 #include <assert.h>
+#include <SoftwareSerial.h>
 
 #include "kerberos.h"
 
@@ -17,33 +18,40 @@
 
 AES aes;
 byte master_key[N_BLOCK] = {0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE};
-const byte clientName = 0; // Value 0-4
+uint8_t myIndex = 1;
+
+SoftwareSerial mySerial(10, 11);
+XBee xbee = XBee();
+ZBRxResponse rx = ZBRxResponse();
 
 byte session_key[5][N_BLOCK] = {0};
 
 bool isConnected = false;
-TGT tgt[5]; // tgt[clienName] is my own TGT with the KDC
+TGT tgt[5]; // tgt[myIndex] is my own TGT with the KDC
 byte nonce[5] = {0};
+
 
 
 void setup() {
   
   // Start the serial with a baud rate of 9600
   Serial.begin(9600);
-  while(!Serial);
+  xbee.setSerial(Serial);
+  
   
   // Set the key in the AES object (128 bit key)
   aes.set_key(master_key, 128);
 
   // Send the opcode 0 to connect to the KDC
-  announceLogin();
   isConnected = false;
 
 }
 
 void loop() {
 
-  // Read from the serial port if something is available to be read
+  announceLogin();
+  delay(100);
+  // Read from the serial port if something is available to be read  
   if(Serial.available()) {
     byte command = Serial.read();
 
@@ -69,20 +77,20 @@ void loop() {
 
         byte plainFirstBlock[N_BLOCK] = {0};
         byte plainSecondBlock[N_BLOCK] = {0};
-        aes.set_key(master_key);
+        aes.set_key(master_key, 128);
         aes.decrypt(cipherFirstBlock, plainFirstBlock);
         aes.decrypt(cipherSecondBlock, plainSecondBlock);
 
         // Read the client name it's being sent to and make sure it is me
         byte readClientName = plainFirstBlock[0];
-        assert(clientName == readClientName);
+        assert(myIndex == readClientName);
 
         // Copy the session key for further communication
-        memcpy(&session_key[clientName], plainSecondBlock, sizeof(byte) * N_BLOCK);
+        memcpy(&session_key[myIndex], plainSecondBlock, sizeof(byte) * N_BLOCK);
 
         // Copy the TGT for further communication
-        memcpy(tgt[clientName].clientName, cipherFirstBlock, sizeof(byte) * N_BLOCK);
-        memcpy(tgt[clientName].sessionKey, cipherSecondBlock, sizeof(byte) * N_BLOCK);
+        memcpy(tgt[myIndex].clientName, cipherFirstBlock, sizeof(byte) * N_BLOCK);
+        memcpy(tgt[myIndex].sessionKey, cipherSecondBlock, sizeof(byte) * N_BLOCK);
         
         isConnected = true;
       }
@@ -120,7 +128,7 @@ void loop() {
         Serial.readBytes(cipherFourthBlock, N_BLOCK); 
 
         // Decrypt the response from the KDC
-        aes.set_key(session_key[clientName], 128);
+        aes.set_key(session_key[myIndex], 128);
         aes.decrypt(cipherFirstBlock, plainFirstBlock); // Name of person to send to 
         aes.decrypt(cipherSecondBlock, plainSecondBlock); // Session key between myself and other 
         aes.decrypt(cipherThirdBlock, plainThirdBlock);  // Name of me (encrypted in TGT
@@ -214,7 +222,7 @@ void loop() {
 }
 
 /* 
- * Announces the login to the Node.js server and establishes a TGT between the KDC and the client
+ * Announces the login to the server and establishes a TGT between the KDC and the client
  * Happens on xbee power on - OPCODE 0
  * 
  * Sends the folllowing information over serial:
@@ -223,12 +231,20 @@ void loop() {
  *  byte - The clientName to identify itself
  */
 void announceLogin() {
-  byte data[3];
-  data[0] = 0; // The opcode number 
-  data[1] = KRB_AS_REQ; // the command being sent
-  data[2] = clientName; // the name of the client announcing themself
+  memset(payload, 0, sizeof(payload));
+  payload[0] = 0; // The opcode number 
+  payload[1] = KRB_AS_REQ; // the command being sent
+  payload[2] = myIndex; // the client announcing themselves
 
-  Serial.write(data, sizeof(data));
+  // Grab the address of the server and form a new address
+  uint32_t msbAddress = addresses[0];
+  uint32_t lsbAddress = addresses[0];
+  XBeeAddress64 addr64 = XBeeAddress64(msbAddress, lsbAddress);
+  
+  // Send out the data
+  ZBTxRequest tx = ZBTxRequest(addr64, payload, sizeof(payload));
+  tx.setAddress16(0xfffe);
+  xbee.send(tx);
 }
 
 /* 
@@ -244,7 +260,6 @@ void announceLogin() {
  *  byte[N_BLOCK]   - Requested resource and authenticator nonce 
  */
 void loginToResource(byte resourceId) {
-  byte data[2 + 3*N_BLOCK] = {0};
   byte timestamp[N_BLOCK] = {0};
   byte cipherTimestamp[N_BLOCK] = {0};
 
@@ -254,26 +269,26 @@ void loginToResource(byte resourceId) {
   }
 
   // Opcodes
-  data[0] = 2; // the opcode number
-  data[1] = KRB_TGS_REQ; // the command being sent
+  payload[0] = 2; // the opcode number
+  payload[1] = KRB_TGS_REQ; // the command being sent
 
   // TGT
-  memcpy(&data[2], tgt[clientName].clientName, N_BLOCK);
-  memcpy(&data[2+N_BLOCK], tgt[clientName].sessionKey, N_BLOCK);
+  memcpy(&payload[2], tgt[myIndex].clientName, N_BLOCK);
+  memcpy(&payload[2+N_BLOCK], tgt[myIndex].sessionKey, N_BLOCK);
 
   // Generate "nonce" for timestamp and who I want to talk to 
   timestamp[0] = resourceId;
   timestamp[1] = (byte)random(0, 255);
 
   // Encrypt the timestamp
-  aes.set_key(session_key[clientName], 128);
+  aes.set_key(session_key[myIndex], 128);
   aes.encrypt(timestamp, cipherTimestamp);
 
   // Authenticator and who to talk to
-  memcpy(&data[2+(2*N_BLOCK)], cipherTimestamp, N_BLOCK);
+  memcpy(&payload[2+(2*N_BLOCK)], cipherTimestamp, N_BLOCK);
 
   // Write out the data to the KDC
-  Serial.write(data, sizeof(data));
+  Serial.write(payload, sizeof(payload));
 }
 
 /* 
@@ -289,17 +304,16 @@ void loginToResource(byte resourceId) {
  *  byte[N_BLOCK]   - Authenticator nonce 
  */
 void connectToResource(byte resourceId) {
-  byte data[2+ 3*N_BLOCK] = {0};
   byte timestamp[N_BLOCK] = {0};
   byte cipherTimestamp[N_BLOCK] = {0};
 
   // Opcodes
-  data[0] = 4;
-  data[1] = KRB_AP_REQ;
+  payload[0] = 4;
+  payload[1] = KRB_AP_REQ;
 
   // TGT copying (encrypted with other party's master key)
-  memcpy(&data[2], tgt[resourceId].clientName, N_BLOCK);
-  memcpy(&data[2], tgt[resourceId].sessionKey, N_BLOCK);
+  memcpy(&payload[2], tgt[resourceId].clientName, N_BLOCK);
+  memcpy(&payload[2], tgt[resourceId].sessionKey, N_BLOCK);
 
 
   // Generate "nonce" for timestamp and who I want to talk to 
@@ -307,13 +321,13 @@ void connectToResource(byte resourceId) {
   nonce[resourceId] = timestamp[0];
 
   // Encrypt the timestamp
-  aes.set_key(session_key[clientName], 128);
+  aes.set_key(session_key[myIndex], 128);
   aes.encrypt(timestamp, cipherTimestamp);
 
   // Authenticator and who to talk to
-  memcpy(&data[2+(2*N_BLOCK)], cipherTimestamp, N_BLOCK);
+  memcpy(&payload[2+(2*N_BLOCK)], cipherTimestamp, N_BLOCK);
 
   // Write out the data to the corresponding node
-  Serial.write(data, sizeof(data));
+  Serial.write(payload, sizeof(payload));
 }
 
