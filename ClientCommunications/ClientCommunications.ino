@@ -25,10 +25,10 @@ ZBRxResponse rx = ZBRxResponse();
 ZBTxStatusResponse txStatus = ZBTxStatusResponse();
 
 byte session_key[5][N_BLOCK] = {0};
-byte txPayload[3+(3*N_BLOCK)];
+bool connectedPeers[5] = {false, false, false, false, false};
+byte txPayload[3+(4*N_BLOCK)];
 uint8_t * rxPayload;
 
-bool isConnected = false;
 TGT tgt; // TGT between myself and the KDC
 byte nonce[5] = {0};
 
@@ -40,15 +40,7 @@ void setup() {
   Serial.begin(9600);
   mySerial.begin(9600);
   xbee.setSerial(mySerial);
-  
-  
-  // Set the key in the AES object (128 bit key)
-  aes.set_key(masterKeys[myIndex], 128);
-
-  // Send the opcode 0 to connect to the KDC
-  isConnected = false;
   announceLogin();
-
 }
 
 void loop() {
@@ -58,11 +50,11 @@ void loop() {
 
   // Make sure that the xbee is available to receive
   if(xbee.getResponse().isAvailable()) {
-    Serial.println("Saw a packet");
+    //Serial.println("Saw a packet");
     
     // Check if we have received a response
     if(xbee.getResponse().getApiId() == ZB_RX_RESPONSE) {
-      Serial.println("Received a ZB_RX Packet");
+      //Serial.println("Received a ZB_RX Packet");
       
       // get the response and store it in a txPayload pointer
       xbee.getResponse().getZBRxResponse(rx);
@@ -81,6 +73,7 @@ void loop() {
   
         // Receiving a TGT and session key back from the KDC
         case 1: {
+          Serial.println("Opcode 1: Getting TGT from KDC");
           byte kerb_command = rxPayload[1];
           assert(kerb_command == KRB_AS_REP);
   
@@ -105,12 +98,10 @@ void loop() {
           memcpy(tgt.clientName, cipherSecondBlock, sizeof(byte) * N_BLOCK);
           memcpy(tgt.sessionKey, cipherThirdBlock, sizeof(byte) * N_BLOCK);
           
-          isConnected = true;
+          connectedPeers[0] = true;
 
-          // Print out the session key to make sure everything is working correctly at this point
-          Serial.print((char *)session_key[myIndex]);
-          
-          Serial.println();
+          // Log into the desired resource
+          loginToResource(2);
         }
           break;
   
@@ -122,43 +113,60 @@ void loop() {
   
         // Receiving a login token for another resource.
         case 3: {
-          byte kerb_command = Serial.read();
+          Serial.println("Opcode 3: Receiving a token from KDC to login to someone");
+          byte kerb_command = rxPayload[1];
           assert(kerb_command == KRB_TGS_REP);
   
-          // Make sure we are connected
-          assert(isConnected);
+          // Make sure we are connected to the KDC
+          assert(connectedPeers[0]);
   
           // Storage for cipher/plaintext blocks being read
-          byte cipherFirstBlock[N_BLOCK] = {0};
-          byte cipherSecondBlock[N_BLOCK] = {0};
-          byte cipherThirdBlock[N_BLOCK] = {0};
-          byte cipherFourthBlock[N_BLOCK] = {0};
-  
           byte plainFirstBlock[N_BLOCK] = {0};
           byte plainSecondBlock[N_BLOCK] = {0};
           byte plainThirdBlock[N_BLOCK] = {0};
           byte plainFourthBlock[N_BLOCK] = {0};
   
-          // Read from the serial port
-          Serial.readBytes(cipherFirstBlock, N_BLOCK); 
-          Serial.readBytes(cipherSecondBlock, N_BLOCK); 
-          Serial.readBytes(cipherThirdBlock, N_BLOCK); 
-          Serial.readBytes(cipherFourthBlock, N_BLOCK); 
-  
           // Decrypt the response from the KDC
           aes.set_key(session_key[myIndex], 128);
-          aes.decrypt(cipherFirstBlock, plainFirstBlock); // Name of person to send to 
-          aes.decrypt(cipherSecondBlock, plainSecondBlock); // Session key between myself and other 
-          aes.decrypt(cipherThirdBlock, plainThirdBlock);  // Name of me (encrypted in TGT
-          aes.decrypt(cipherFourthBlock, plainFourthBlock); // Session key between myself and other (encrypted by Bob's master key)
+          aes.decrypt(&rxPayload[2], plainFirstBlock); // Name of resource requested (index) 
+          aes.decrypt(&rxPayload[2+N_BLOCK], plainSecondBlock); // Session key between myself and other 
+          aes.decrypt(&rxPayload[2+(2*N_BLOCK)], plainThirdBlock);  // Name of me (encrypted by other's master key)
+          aes.decrypt(&rxPayload[2+(3*N_BLOCK)], plainFourthBlock); // Session key between myself and other (encrypted by Bob's master key)
   
           // Save the session key between the other party
           byte readClientName = plainFirstBlock[0];
           memcpy(&session_key[readClientName], plainSecondBlock, N_BLOCK);
-  
-          // Save the TGT for the other party for further communication
-          memcpy(tgt.clientName, plainThirdBlock, N_BLOCK);
-          memcpy(tgt.sessionKey, plainFourthBlock, N_BLOCK); 
+
+          switch(readClientName) {
+            case 0: {
+              Serial.println("TRYING TO CONNECT TO RESOUCE ID 0");
+              break;
+            }
+            case 1: {
+              Serial.println("TRYING TO CONNECT TO RESOUCE ID 1");
+              break;
+            }
+            case 2: {
+              Serial.println("TRYING TO CONNECT TO RESOUCE ID 2");
+              break;
+            }
+            case 3: {
+              Serial.println("TRYING TO CONNECT TO RESOUCE ID 3");
+              break;
+            }
+            case 4: {
+              Serial.println("TRYING TO CONNECT TO RESOUCE ID 4");
+              break;
+            }
+            default: {
+              Serial.println("Not good enough for dan");
+            }
+          }
+ 
+          // Initialize an authentication operation between myself and the other party
+          connectedPeers[readClientName] = true;
+          connectToResource(plainThirdBlock, plainFourthBlock, readClientName);
+          
         }
           break;
   
@@ -240,17 +248,17 @@ void loop() {
       xbee.getResponse().getZBTxStatusResponse(txStatus);
 
       if(txStatus.getDeliveryStatus() == SUCCESS) {
-        Serial.println("Transmit successful");
+        Serial.println("Transmit Success");
       } else {
         Serial.println("Transmit failed");
-        if(!isConnected) {
+        if(!connectedPeers[0]) {
           Serial.println("Reannouncing login");
           announceLogin();
         }
       }
     }
   } else if(xbee.getResponse().isError()){
-    Serial.println("Error: " + xbee.getResponse().getErrorCode());
+    Serial.println("Error: ");
   }
 
 }
@@ -277,7 +285,7 @@ void announceLogin() {
   ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
   tx.setAddress16(0xfffe);
   xbee.send(tx);
-  Serial.println("Announcing login");
+  Serial.println("Opcode 0: Announcing login");
 }
 
 /* 
@@ -297,9 +305,11 @@ void loginToResource(byte resourceId) {
   byte cipherTimestamp[N_BLOCK] = {0};
 
   // Make sure we are connected first
-  if(!isConnected) {
+  if(!connectedPeers[0]) {
     return;
   }
+
+  memset(txPayload, 0, sizeof(txPayload));
 
   // Opcodes
   txPayload[0] = 2; // the opcode number
@@ -320,14 +330,22 @@ void loginToResource(byte resourceId) {
   // Authenticator and who to talk to
   memcpy(&txPayload[2+(2*N_BLOCK)], cipherTimestamp, N_BLOCK);
 
-  // Write out the data to the KDC
-  Serial.write(txPayload, sizeof(txPayload));
+  // Grab the address of the server and form a new address
+  XBeeAddress64 addr64 = XBeeAddress64(highAddress[0], lowAddress[0]);
+  
+  // Send out the data
+  ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
+  tx.setAddress16(0xfffe);
+  xbee.send(tx);
+  Serial.println("Opcode 2: Requesting access to resouce");
 }
 
 /* 
  * Have this client connect to the desired other client (no KDC middleman)
  * 
  * Args: 
+ *   byte - the encrypted name of the resource attempting to communicate
+ *   byte - the resource attempting to authenticate
  *   byte - the resource attempting to authenticate
  * 
  * Sends the folllowing information over serial:
@@ -336,7 +354,8 @@ void loginToResource(byte resourceId) {
  *  byte[2*N_BLOCK] - TGT of the other person
  *  byte[N_BLOCK]   - Authenticator nonce 
  */
-void connectToResource(byte resourceId) {
+void connectToResource(byte ticketName[], byte ticketKey[], byte resourceId) {
+  Serial.println("Opcode 4: Authenticating myself with resource");
   byte timestamp[N_BLOCK] = {0};
   byte cipherTimestamp[N_BLOCK] = {0};
 
@@ -360,6 +379,6 @@ void connectToResource(byte resourceId) {
   memcpy(&txPayload[2+(2*N_BLOCK)], cipherTimestamp, N_BLOCK);
 
   // Write out the data to the corresponding node
-  Serial.write(txPayload, sizeof(txPayload));
+  //Serial.write(txPayload, sizeof(txPayload));
 }
 
