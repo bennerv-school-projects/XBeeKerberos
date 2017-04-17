@@ -9,7 +9,7 @@
 
 
 AES aes;
-uint8_t myIndex = 2;
+uint8_t myIndex = 1;
 
 SoftwareSerial mySerial(10, 11);
 XBee xbee = XBee();
@@ -245,11 +245,11 @@ void loop() {
           byte messageLength = rxPayload[2];
 
           Serial.print("Opcode 6: Received a command ");
-          Serial.println(
+
           memset(txPayload, 0, sizeof(txPayload));
 
           // Place to store the message
-          txPayload[0] = (byte)7;
+          txPayload[0] = (byte) 7;
           txPayload[1] = messageLength;
 
           // Set the encryption key
@@ -257,7 +257,7 @@ void loop() {
 
           // Decrypt the message
           for(int i = 0; i < messageLength; i+= N_BLOCK) {
-            aes.decrypt(rxPayload[3+i], txPayload[2+i]);
+            aes.decrypt(&rxPayload[3+i], &txPayload[2+i]);
           }
 
           // Print command to the KDC 
@@ -459,7 +459,7 @@ void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
   // Encrypt the message
   for(int i = 0; i < messageLength; i+= N_BLOCK) {
     memcpy(&message[i], plainText, N_BLOCK);
-    aes.encrypt(plainText, txPayload[3+i]);
+    aes.encrypt(plainText, &txPayload[3+i]);
   }
   Serial.println("Opcode 6: Sending a message to a node");
   XBeeAddress64 addr64 = XBeeAddress64(highAddress[nodeId], lowAddress[nodeId]);
