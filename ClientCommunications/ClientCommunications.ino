@@ -23,8 +23,8 @@ bool hasNotAnnouncedLogin = true;
 byte txPayload[3+(4*N_BLOCK)];
 uint8_t * rxPayload;
 
-char _message[4*N_BLOCK];
-byte _messageLength;
+char _message[4*N_BLOCK] = {0};
+byte _messageLength = 0;
 
 TGT tgt; // TGT between myself and the KDC
 byte nonce[5] = {0};
@@ -244,7 +244,8 @@ void loop() {
           byte senderIndex = rxPayload[1];
           byte messageLength = rxPayload[2];
 
-          Serial.print("Opcode 6: Received a command ");
+          Serial.print("Opcode 6: Received a command from ");
+          Serial.println(senderIndex, DEC);
 
           memset(txPayload, 0, sizeof(txPayload));
 
@@ -280,6 +281,12 @@ void loop() {
           byte receiver = rxPayload[1];
           byte messageLength = rxPayload[2];
           char * message = &rxPayload[3];
+
+          Serial.print("Message is: ");
+          for(int i = 0; i < messageLength; i++) {
+            Serial.print(message[i]);
+          }
+          Serial.println();
           
           sendMessageToNode(receiver, messageLength, message);
         }
@@ -383,7 +390,8 @@ void loginToResource(byte resourceId) {
   ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
   tx.setAddress16(0xfffe);
   xbee.send(tx);
-  Serial.println("Opcode 2: Requesting access to resouce");
+  Serial.print("Opcode 2: Requesting access to resouce ");
+  Serial.println(resourceId, DEC);
 }
 
 /* 
@@ -439,11 +447,17 @@ void authenticateResource(byte ticketName[], byte ticketKey[], byte resourceId) 
 void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
   byte plainText[N_BLOCK] = {0};
 
+  // If we aren't connected yet
   if(!connectedPeers[nodeId]) {
     loginToResource(nodeId);
     pendingMessage = true;
     _messageLength = messageLength;
     memcpy(_message, message, messageLength);
+
+    for(int i = 0; i < messageLength; i++) {
+      Serial.print(message[i]);
+    }
+    Serial.println(" done reading message out non-authentiated in sendMessageToNode");
     return;
   }
   memset(txPayload, 0, sizeof(txPayload));
@@ -458,10 +472,23 @@ void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
 
   // Encrypt the message
   for(int i = 0; i < messageLength; i+= N_BLOCK) {
-    memcpy(&message[i], plainText, N_BLOCK);
+    memcpy(plainText, &message[i], N_BLOCK);
     aes.encrypt(plainText, &txPayload[3+i]);
   }
-  Serial.println("Opcode 6: Sending a message to a node");
+  Serial.print("Opcode 6: Sending a message to node: ");
+  Serial.println(nodeId, DEC);
+  Serial.print("Message length is ");
+  Serial.println(messageLength, DEC);
+  Serial.print("Message is: " );
+  for(int i = 0; i < messageLength; i++) {
+    Serial.print(message[i]);
+  }
+  Serial.println();
+
+  // Reset the globals
+  memset(0, _message, sizeof(_message));
+  _messageLength = 0;
+  
   XBeeAddress64 addr64 = XBeeAddress64(highAddress[nodeId], lowAddress[nodeId]);
   ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
   tx.setAddress16(0xfffe);
