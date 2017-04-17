@@ -20,8 +20,8 @@ typedef struct {
 } TGT;
 
 // Address and payload information
-uint32_t highAddress[5] = {0x0013A200, 0x0013A200, 0x00000000, 0x00000000, 0x00000000};
-uint32_t lowAddress[5] = {0x4065C409, 0x4065C4B6, 0x00000000, 0x00000000, 0x00000000};
+uint32_t highAddress[5] = {0x0013A200, 0x0013A200, 0x0013A200, 0x00000000, 0x00000000};
+uint32_t lowAddress[5] = {0x4065C409, 0x4065C4B6, 0x4124264D, 0x00000000, 0x00000000};
 
 // Master key storage
 byte masterKeys[5][N_BLOCK] = { 

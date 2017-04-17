@@ -7,15 +7,6 @@
 
 #include "kerberos.h"
 
-/* CHANGE LOG
- * Date       Name       Changes
- * -----------------------------------------------------------------------------
- * 04/01/17   Ben        File creation
- * 04/12/17   Ben        Kerberos commands and processing opcode 1
- * -----------------------------------------------------------------------------
- * Kerberos client on arduino
- * ----------------------------------------------------------------------------- 
- */
 
 AES aes;
 uint8_t myIndex = 1;
@@ -27,13 +18,15 @@ ZBTxStatusResponse txStatus = ZBTxStatusResponse();
 
 byte session_key[5][N_BLOCK] = {0};
 bool connectedPeers[5] = {false, false, false, false, false};
+bool pendingMessage = false;
 byte txPayload[3+(4*N_BLOCK)];
 uint8_t * rxPayload;
 
+char _message[4*N_BLOCK];
+byte _messageLength;
+
 TGT tgt; // TGT between myself and the KDC
 byte nonce[5] = {0};
-
-
 
 void setup() {
   
@@ -232,6 +225,11 @@ void loop() {
           if(plaintextNonce[0] == (nonce[sender]+1) ) {
             connectedPeers[sender] = true;
             Serial.println("Successfully authenticated with client");
+          }
+
+          // Continue with the message if there is a pending message
+          if(pendingMessage) {
+            sendMessageToNode(sender, _messageLength, _message);
           }
         }
           break;
@@ -434,7 +432,10 @@ void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
   byte plainText[N_BLOCK] = {0};
 
   if(!connectedPeers[nodeId]) {
-    Serial.println("Not connected to the required node");
+    loginToResource(nodeId);
+    pendingMessage = true;
+    _messageLength = messageLength;
+    memcpy(_message, message, messageLength);
     return;
   }
   memset(txPayload, 0, sizeof(txPayload));
