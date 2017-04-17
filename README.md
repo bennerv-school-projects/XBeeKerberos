@@ -7,3 +7,8 @@ Add the XBee Library by searching it under Sketch->Include Libraries->Manage Lib
 
 ## Hardware Setup
 XBee (Series 2) programmed in API AP 2 mode.  
+
+
+
+AES Arduino Library used from the following source:
+http://forum.arduino.cc/index.php?topic=88890.0
