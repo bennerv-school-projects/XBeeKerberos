@@ -3,7 +3,6 @@
 #include "kerberos.h"
 #include <AES.h>
 #include <SoftwareSerial.h>
-#include <stdio.h>
 #include <assert.h>
 
 XBee xbee= XBee();
