@@ -270,15 +270,17 @@ void loop() {
   
         // Command to do something from the server
         case 8: {
+          Serial.println("Received a command to send to someone");
           byte receiver = rxPayload[1];
           byte messageLength = rxPayload[2];
           char * message = &rxPayload[3];
+          
           sendMessageToNode(receiver, messageLength, message);
         }
           break;
           
         default: {
-          
+          Serial.println("Didn't receive a valid opcode");
         }
           break;
       }
