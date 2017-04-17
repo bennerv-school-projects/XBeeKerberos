@@ -72,7 +72,7 @@ void loop() {
   
         // Receiving a TGT and session key back from the KDC
         case 1: {
-          Serial.println("Opcode 1: Getting TGT from KDC");
+          Serial.println("Received Opcode 1: Getting TGT from KDC");
           byte kerb_command = rxPayload[1];
           assert(kerb_command == KRB_AS_REP);
   
@@ -109,7 +109,7 @@ void loop() {
   
         // Receiving a login token for another resource.
         case 3: {
-          Serial.println("Opcode 3: Receiving a token from KDC to login to someone");
+          Serial.println("Received Opcode 3: Receiving a token from KDC to login to someone");
           byte kerb_command = rxPayload[1];
           assert(kerb_command == KRB_TGS_REP);
   
@@ -135,27 +135,27 @@ void loop() {
 
           switch(readClientName) {
             case 0: {
-              Serial.println("Connecting to resource id 0");
+              Serial.println("  Connecting to resource id 0");
               break;
             }
             case 1: {
-              Serial.println("Connecting to resource id 1");
+              Serial.println("  Connecting to resource id 1");
               break;
             }
             case 2: {
-              Serial.println("Connecting to resource id 2");
+              Serial.println("  Connecting to resource id 2");
               break;
             }
             case 3: {
-              Serial.println("Connecting to resource id 3");
+              Serial.println("  Connecting to resource id 3");
               break;
             }
             case 4: {
-              Serial.println("Connecting to resource id 4");
+              Serial.println("  Connecting to resource id 4");
               break;
             }
             default: {
-              Serial.println("Trying to connect to an invalid resource id");
+              Serial.println("  Trying to connect to an invalid resource id");
             }
           }
  
@@ -167,7 +167,7 @@ void loop() {
   
         // Receiving a authentication from a client
         case 4: {
-          Serial.println("Opcode 4: Receive authentication message from a client");
+          Serial.println("Received Opcode 4: Receive authentication message from a client");
           byte kerb_command = rxPayload[1];
           assert(kerb_command == KRB_AP_REQ);
           memset(txPayload, 0, sizeof(txPayload));
@@ -213,7 +213,7 @@ void loop() {
         // Authenticating oneself to a client
         case 5: {
 
-          Serial.println("Opcode 5: Final authentication with another client");
+          Serial.println("Received Opcode 5: Final authentication with another client");
           
           byte kerb_command = rxPayload[1];
           assert(kerb_command == KRB_AP_REP);
@@ -229,7 +229,7 @@ void loop() {
           // Check the nonce is correct
           if(plaintextNonce[0] == (nonce[sender]+1) ) {
             connectedPeers[sender] = true;
-            Serial.println("Successfully authenticated with client");
+            Serial.println("  Successfully authenticated with client");
           }
 
           // Continue with the message if there is a pending message
@@ -244,7 +244,7 @@ void loop() {
           byte senderIndex = rxPayload[1];
           byte messageLength = rxPayload[2];
 
-          Serial.print("Opcode 6: Received a command from ");
+          Serial.print("Received Opcode 6: Received a command from ");
           Serial.println(senderIndex, DEC);
 
           memset(txPayload, 0, sizeof(txPayload));
@@ -260,6 +260,8 @@ void loop() {
           for(int i = 0; i < messageLength; i+= N_BLOCK) {
             aes.decrypt(&rxPayload[3+i], &txPayload[2+i]);
           }
+
+          Serial.println("Sending Opcode 7: Printing out command on KDC");
 
           // Print command to the KDC 
           XBeeAddress64 addr64 = XBeeAddress64(highAddress[0], lowAddress[0]);
@@ -277,12 +279,14 @@ void loop() {
    
         // Command to do something from the server
         case 8: {
-          Serial.println("Received a command to send to someone");
+          
           byte receiver = rxPayload[1];
           byte messageLength = rxPayload[2];
           char * message = &rxPayload[3];
+          Serial.print("Received Opcode 8 - Sending message to node ");
+          Serial.println(receiver, DEC);
 
-          Serial.print("Message is: ");
+          Serial.print("  Message is: ");
           for(int i = 0; i < messageLength; i++) {
             Serial.print(message[i]);
           }
@@ -293,7 +297,7 @@ void loop() {
           break;
           
         default: {
-          Serial.println("Didn't receive a valid opcode");
+          Serial.println("Received Invalid Opcode");
         }
           break;
       }
@@ -301,11 +305,11 @@ void loop() {
       xbee.getResponse().getZBTxStatusResponse(txStatus);
 
       if(txStatus.getDeliveryStatus() == SUCCESS) {
-        Serial.println("Transmit Success");
+        Serial.println("  Transmit Success");
       } else {
-        Serial.println("Transmit failed");
+        Serial.println("  Transmit failed");
         if(!connectedPeers[0]) {
-          Serial.println("Reannouncing login");
+          Serial.println("Sending Opcode 0: Reannouncing login");
           announceLogin();
         }
       }
@@ -338,7 +342,7 @@ void announceLogin() {
   ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
   tx.setAddress16(0xfffe);
   xbee.send(tx);
-  Serial.println("Opcode 0: Announcing login");
+  Serial.println("Sending Opcode 0: Announcing login");
 }
 
 /* 
@@ -390,7 +394,7 @@ void loginToResource(byte resourceId) {
   ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
   tx.setAddress16(0xfffe);
   xbee.send(tx);
-  Serial.print("Opcode 2: Requesting access to resouce ");
+  Serial.print("Sending Opcode 2: Requesting access to resouce ");
   Serial.println(resourceId, DEC);
 }
 
@@ -454,6 +458,7 @@ void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
     _messageLength = messageLength;
     memcpy(_message, message, messageLength);
 
+    Serial.print("  ");
     for(int i = 0; i < messageLength; i++) {
       Serial.print(message[i]);
     }
@@ -475,11 +480,11 @@ void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
     memcpy(plainText, &message[i], N_BLOCK);
     aes.encrypt(plainText, &txPayload[3+i]);
   }
-  Serial.print("Opcode 6: Sending a message to node: ");
+  Serial.print("Sending Opcode 6: Sending a message to node: ");
   Serial.println(nodeId, DEC);
-  Serial.print("Message length is ");
+  Serial.print("  Message length is ");
   Serial.println(messageLength, DEC);
-  Serial.print("Message is: " );
+  Serial.print("  Message is: " );
   for(int i = 0; i < messageLength; i++) {
     Serial.print(message[i]);
   }
