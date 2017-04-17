@@ -14,63 +14,23 @@ uint16_t address;
 ZBRxResponse pck = ZBRxResponse();
 ZBTxStatusResponse txStat = ZBTxStatusResponse();
 AES aes;
+String inputString = "";
+bool stringComplete = false;
 
 void setup() {
-  // put your setup code here, to run once:
 
-//  Serial1.begin(115200); // Set the baud.
-//  while (!Serial1) {}
-//  // Wait for U-boot to finish startup.  Consume all bytes until we are done.
-//  do {
-//     while (Serial1.available() > 0) {
-//        Serial1.read();
-//     }
-//    
-//     delay(1000);
-//  } while (Serial1.available()>0);
-
+  inputString.reserve(60);
   Serial.begin(9600); //for uno test
   mySerial.begin(9600);
   xbee.setSerial(mySerial);
-  //Serial.println("setup");
-
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
   byte opcode;
-  //Serial.println("accessing xbee");
-  //delay(500);
-
-  // Check if there is anything to read from the serial port
-  if(Serial.available()) {
-    byte initiator = Serial.read();
-    Serial.read(); // Consume whitespace
-    byte receiver = Serial.read();
-    Serial.read(); // Consume whitespace
-    byte messageLength = Serial.read();
-    Serial.read(); // Consume whitespace
-    char message[messageLength];
-    Serial.readBytes(message, messageLength);
-
-    // copy the data over to send to the initiator of the message
-    memset(txPayload, 0, sizeof(txPayload));
-    txPayload[0] = 8;
-    txPayload[1] = receiver;
-    txPayload[2] = messageLength;
-    memcpy(&txPayload[3], message, messageLength);
-
-    // Send the data over to the correct xbee
-    XBeeAddress64 addr64 = XBeeAddress64(highAddress[initiator], lowAddress[initiator]);
-    ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
-    tx.setAddress16(0xfffe);
-    xbee.send(tx);    
-  }
   
   xbee.readPacket();
   
   if (xbee.getResponse().isAvailable()) {
-     Serial.println("got xbee response");
      
      if (xbee.getResponse().getApiId() == ZB_RX_RESPONSE){
        
@@ -81,14 +41,14 @@ void loop() {
 
        switch (opcode){
           case 0: {
-            Serial.println("Processing opcode " + 0);
-          //Client login. 
-          //Invent a 128' session key 
-          //loopup clients master key using rxPayload[2]
+            Serial.println("Processing opcode 0: KRB_AS_REQ");
+            //Client login. 
+            //Invent a 128' session key 
+            //loopup clients master key using rxPayload[2]
             assert(rxPayload[1] == KRB_AS_REQ);
-            /*debug*/ Serial.println(rxPayload[1]);
+
             //establish session key
-            byte sessionKey[N_BLOCK];//= {'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p'};
+            byte sessionKey[N_BLOCK];
             int i;
             for (i = 0; i < N_BLOCK; i ++){
               sessionKey[i] = (byte)random(0, 255);
@@ -118,9 +78,7 @@ void loop() {
             ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
             tx.setAddress16(0xfffe);
             xbee.send(tx);
-            Serial.println("auth response sent");
-            Serial.println(highAddress[rxPayload[2]]);
-            Serial.println(lowAddress[rxPayload[2]]);
+            Serial.println("  KRB_AS_REP sent");
             break;
           }
           case 2 : {
@@ -130,9 +88,9 @@ void loop() {
             //generate a random session key
             //create ticket for requested resource. This conisists of the client initiating contact and the session key both encrypted with the resources master key
 
-            Serial.println("Processing Opcode " + 2);
+            Serial.println("Processing Opcode 2: KRB_TGS_REQ");
             assert(rxPayload[1] == KRB_TGS_REQ);
-            /*debug*/ Serial.println((int)rxPayload[1]);
+            /*debug*/ //Serial.println((int)rxPayload[1]);
             //establish session key
             byte sessionKey[N_BLOCK]; //= {'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p'};
             int i;
@@ -173,22 +131,26 @@ void loop() {
             ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
             tx.setAddress16(0xfffe);
             xbee.send(tx);
-            Serial.println("TGS response sent");
-            Serial.println(highAddress[rxPayload[2]]);
-            Serial.println(lowAddress[rxPayload[2]]);
+            Serial.println("  KRB_TGS_REP sent");
+            //Serial.println(highAddress[rxPayload[2]]);
+            //Serial.println(lowAddress[rxPayload[2]]);
             //Serial.print("K_AB = "); Serial.println(sessionKey);
             
             break;
           }
           case 7: {
             byte messageLength = rxPayload[1];
-            Serial.println("Opcode 7: Received a message");
+            Serial.println("Opcode 7: Control layer - Received a message");
             char message[messageLength+1] = {0};
 
             // Print out the message over serial
             memcpy(message, &rxPayload[2], messageLength);
             Serial.println(message);
+            break;
          
+          }
+          default : {
+            break;
           }
 
 
@@ -198,9 +160,9 @@ void loop() {
      }else if (xbee.getResponse().getApiId() == ZB_TX_STATUS_RESPONSE){
         xbee.getResponse().getZBTxStatusResponse(txStat);
         if (txStat.getDeliveryStatus() == SUCCESS){
-          Serial.println("tx Success!");
+          Serial.println("    XBEE TX Success");
         } else {
-          Serial.println("Tx probably failed");
+          Serial.println("    XBEE TX failed");
         }
      }
    }else if(xbee.getResponse().isError()){
@@ -208,5 +170,53 @@ void loop() {
     Serial.println(xbee.getResponse().getErrorCode());
     }
   
+  if (stringComplete) {
+    //Serial.println(inputString);
+    byte initiator = inputString[0] - 48;
+    byte receiver = inputString[2] - 48;
+    char messageLength[3];
+    messageLength[0] = inputString[4];
+    messageLength[1] = inputString[5];
+    messageLength[2] = '\0';
+    byte len = (byte)atoi(messageLength);
 
+    //debug
+    Serial.println("Command layer - revieved input from user. Simulating command.");
+    Serial.print("  Initiator "); Serial.println(initiator, DEC);
+    Serial.print("  Reciever "); Serial.println(receiver, DEC);
+    Serial.print("  Message length "); Serial.println(len, DEC);
+    Serial.print("  CMD Message = "); Serial.println(inputString);
+    
+    memset(txPayload, 0, sizeof(txPayload));
+    txPayload[0] = 8;
+    txPayload[1] = receiver;
+    txPayload[2] = len;
+    memcpy(&txPayload[3], &inputString[7], len);
+
+    // Send the data over to the correct xbee
+    XBeeAddress64 addr64 = XBeeAddress64(highAddress[initiator], lowAddress[initiator]);
+    ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
+    tx.setAddress16(0xfffe);
+    xbee.send(tx);    
+
+    Serial.println("    CMD sent.");
+    // clear the string:
+    inputString = "";
+    stringComplete = false;
+  }
+}
+
+void serialEvent() {
+  while (Serial.available()) {
+    // get the new byte:
+    char inChar = (char)Serial.read();
+    // add it to the inputString:
+    inputString += inChar;
+    // if the incoming character is a newline, set a flag
+    // so the main loop can do something about it:
+    if (inChar == '\n') {
+      stringComplete = true; 
+    }
+  }
+    
 }
