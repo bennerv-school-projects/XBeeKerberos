@@ -491,7 +491,7 @@ void sendMessageToNode(byte nodeId, byte messageLength, char message[]) {
   Serial.println();
 
   // Reset the globals
-  memset(0, _message, sizeof(_message));
+  memset(_message, 0, sizeof(_message));
   _messageLength = 0;
   
   XBeeAddress64 addr64 = XBeeAddress64(highAddress[nodeId], lowAddress[nodeId]);
