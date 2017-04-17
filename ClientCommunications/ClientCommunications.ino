@@ -9,7 +9,7 @@
 
 
 AES aes;
-uint8_t myIndex = 1;
+uint8_t myIndex = 2;
 
 SoftwareSerial mySerial(10, 11);
 XBee xbee = XBee();
@@ -19,6 +19,7 @@ ZBTxStatusResponse txStatus = ZBTxStatusResponse();
 byte session_key[5][N_BLOCK] = {0};
 bool connectedPeers[5] = {false, false, false, false, false};
 bool pendingMessage = false;
+bool hasNotAnnouncedLogin = true;
 byte txPayload[3+(4*N_BLOCK)];
 uint8_t * rxPayload;
 
@@ -34,10 +35,14 @@ void setup() {
   Serial.begin(9600);
   mySerial.begin(9600);
   xbee.setSerial(mySerial);
-  announceLogin();
 }
 
 void loop() {
+
+  if(hasNotAnnouncedLogin) {
+    announceLogin();
+    hasNotAnnouncedLogin = false;
+  }
   
   // Read a packet from the KDC
   xbee.readPacket();
@@ -239,11 +244,12 @@ void loop() {
           byte senderIndex = rxPayload[1];
           byte messageLength = rxPayload[2];
 
-          Serial.println("Opcode 6: Received a command");
+          Serial.print("Opcode 6: Received a command ");
+          Serial.println(
           memset(txPayload, 0, sizeof(txPayload));
 
           // Place to store the message
-          txPayload[0] = 7;
+          txPayload[0] = (byte)7;
           txPayload[1] = messageLength;
 
           // Set the encryption key
@@ -267,7 +273,7 @@ void loop() {
           assert(0);
         }
           break;
-  
+   
         // Command to do something from the server
         case 8: {
           Serial.println("Received a command to send to someone");
