@@ -41,6 +41,31 @@ void loop() {
   byte opcode;
   //Serial.println("accessing xbee");
   //delay(500);
+
+  // Check if there is anything to read from the serial port
+  if(Serial.available()) {
+    byte initiator = Serial.read();
+    Serial.read(); // Consume whitespace
+    byte receiver = Serial.read();
+    Serial.read(); // Consume whitespace
+    byte messageLength = Serial.read();
+    Serial.read(); // Consume whitespace
+    char message[messageLength];
+    Serial.readBytes(message, messageLength);
+
+    // copy the data over to send to the initiator of the message
+    memset(txPayload, 0, sizeof(txPayload));
+    txPayload[0] = 8;
+    txPayload[1] = receiver;
+    txPayload[2] = messageLength;
+    memcpy(&txPayload[3], message, messageLength);
+
+    // Send the data over to the correct xbee
+    XBeeAddress64 addr64 = XBeeAddress64(highAddress[initiator], lowAddress[initiator]);
+    ZBTxRequest tx = ZBTxRequest(addr64, txPayload, sizeof(txPayload));
+    tx.setAddress16(0xfffe);
+    xbee.send(tx);    
+  }
   
   xbee.readPacket();
   
@@ -154,6 +179,16 @@ void loop() {
             //Serial.print("K_AB = "); Serial.println(sessionKey);
             
             break;
+          }
+          case 7: {
+            byte messageLength = rxPayload[1];
+            Serial.println("Opcode 7: Received a message");
+            char message[messageLength+1] = {0};
+
+            // Print out the message over serial
+            memcpy(message, &rxPayload[2], messageLength);
+            Serial.println(message);
+         
           }
 
 

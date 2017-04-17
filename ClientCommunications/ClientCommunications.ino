@@ -100,9 +100,6 @@ void loop() {
           memcpy(tgt.sessionKey, cipherThirdBlock, sizeof(byte) * N_BLOCK);
           
           connectedPeers[0] = true;
-
-          // Log into the desired resource
-          loginToResource(2);
         }
           break;
   
@@ -275,7 +272,10 @@ void loop() {
   
         // Command to do something from the server
         case 8: {
-          
+          byte receiver = rxPayload[1];
+          byte messageLength = rxPayload[2];
+          char * message = &rxPayload[3];
+          sendMessageToNode(receiver, messageLength, message);
         }
           break;
           
